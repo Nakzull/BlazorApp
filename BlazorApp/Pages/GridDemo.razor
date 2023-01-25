@@ -1,0 +1,200 @@
+﻿@page "/griddemo"
+@using System.Text.Json
+@inject IJSRuntime JSRuntime
+
+<h3>MatBlazor Grid Demo</h3>
+
+<MatButton Outlined="true" @onclick="@(e => OpenDialog(false))">Add Picture</MatButton>
+
+
+<hr />
+
+<MatTable Items="@pictures" class="mat-elevation-z5" AllowSelection="true" SelectionChanged="SelectionChangeEvent" FilterByColumnName="Name">
+    <MatTableHeader>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Size</th>
+        <th>Picture</th>
+        <th>Action</th>
+    </MatTableHeader>
+    <MatTableRow>
+        <td>@context.PictureName</td>
+        <td>@context.PictureType</td>
+        <td>@context.PictureSize</td>
+        <td><img src="data:@context.PictureType;base64,@context.Base64" width="100" height="100" alt="@context.PictureName" /></td>
+        <td>
+            <MatButton Raised="true" @onclick="@(e => OpenDialog(true))" Icon="edit" title="Edit picture"></MatButton>
+            <MatButton Raised="true" @onclick="DeletePicture" Icon="restore_from_trash" title="Delete picture"></MatButton>
+        </td>
+    </MatTableRow>
+</MatTable>
+
+<MatDialog @bind-IsOpen="@dialogIsOpen">
+    <MatDialogTitle>Add Picture</MatDialogTitle>
+    <MatDialogContent>
+        <MatFileUpload OnChange="@FilesReady" Label="Drop a single file here or Browse"></MatFileUpload>
+        <MatTextField Label="Picture Name" @bind-Value="@picture.PictureName"></MatTextField>
+        <MatTextField Label="Picture Type" ReadOnly="true" @bind-Value="@picture.PictureType"></MatTextField>
+        <MatTextField Label="Picture Size" ReadOnly="true" @bind-Value="@picture.PictureSize"></MatTextField>
+        <img src="data:@picture.PictureType;base64,@picture.Base64" width="100" height="100" alt="@picture.PictureName" />
+    </MatDialogContent>
+    <MatDialogActions>
+        <MatButton OnClick="OkClick">Add</MatButton>
+        <MatButton OnClick="CloseDialog">Close</MatButton>
+    </MatDialogActions>
+</MatDialog>
+
+<MatButton Outlined="true" @onclick="Delete">Clear pictures</MatButton>
+
+@code {
+    Picture picture = new Picture();
+    Picture selectedPic = null;
+    Picture tempPic = null;
+    int _index = -1;
+    bool _isDelete = false;
+    bool dialogIsOpen = false;
+    bool _isEdit = false;
+    bool snackBar = false;
+
+    List<long> uploadSizes = new List<long>();
+    List<string> uploadTypes = new List<string>();
+
+    // Here I get the information from the uploaded and input it in the textfields and add the picture to the form.
+    async void FilesReady(IMatFileUploadEntry[] files)
+    {
+        picture.PictureSize = (files.First().Size / 1024).ToString();
+        picture.PictureType = files.First().Type;
+        using var stream = new MemoryStream();
+        await files.First().WriteToStreamAsync(stream);
+        var base64 = Convert.ToBase64String(stream.ToArray());
+        picture.Base64 = base64;
+        StateHasChanged();
+    }
+
+    List<Picture> pictures = new List<Picture>()
+    {
+
+    };
+
+    public class Picture
+    {
+        public int PictureId { get; set; }
+        public string PictureName { get; set; }
+        public string PictureType { get; set; }
+        public string PictureSize { get; set; }
+        public string Base64 { get; set; }
+
+        public Picture()
+        {
+
+        }
+
+        public Picture(int id, string name, string type, string size)
+        {
+            this.PictureId = id;
+            this.PictureName = name;
+            this.PictureType = type;
+            this.PictureSize = size;
+        }
+    }
+
+    Picture[] prod = new Picture[]
+    {
+
+    };
+    
+    // This adds the current picture to the list of pictures.
+    private void AddPicture(Picture pict)
+    {
+        pict.PictureId = pictures.Count + 1;
+        pictures.Add(pict);
+    }
+
+    // This lets the user edit the information of a picture.
+    private void EditPicture(Picture pict)
+    {
+        if (pict != null && pict.PictureId > 0)
+        {
+            int index = pictures.FindIndex(a => a.PictureId == pict.PictureId);
+            pictures.RemoveAll(x => x.PictureId == pict.PictureId);
+            pictures.Insert(index, pict);
+        }
+    }
+
+    // This removes the selected picture and it's information.
+    private void DeletePicture()
+    {
+        _isDelete = true;
+        if (picture != null && picture.PictureId > 0)
+        {
+            pictures.Remove(picture);
+            _isDelete = false;
+            this.StateHasChanged();
+        }
+    }
+
+    // This opens up the dialog.
+    private void OpenDialog(bool isEdit)
+    {
+        _isEdit = isEdit;
+        if (!_isEdit)
+            picture = new Picture();
+        dialogIsOpen = true;
+    }
+
+    // This closes the dialog and saves the current list of pictures on localstorage.
+    async void OkClick()
+    {
+        dialogIsOpen = false;
+        if (!_isEdit) this.AddPicture(picture);
+        else this.EditPicture(picture);       
+        await JSRuntime.InvokeVoidAsync("localStorage.setItem", "pictureList", JsonSerializer.Serialize(pictures));
+        StateHasChanged();
+    }
+
+    // This closes the dialog and if data is entered it edits the picture.
+    private void CloseDialog()
+    {
+        dialogIsOpen = false;
+        if (selectedPic != null)
+        {
+            picture = selectedPic;
+            this.EditPicture(selectedPic);
+        }
+    }
+
+    // This checks if there is new picture data and if there is it prepares them to be added to the list.
+    private void SelectionChangeEvent(object pict)
+    {
+        var currentPic = (Picture)pict;
+        if (currentPic != null)
+        {
+            picture = currentPic;
+            selectedPic = new Picture(currentPic.PictureId,
+                                      currentPic.PictureName,
+                                      currentPic.PictureType,
+                                      currentPic.PictureSize);
+        }
+        else
+        {
+            selectedPic = new Picture();
+        }
+        if (_isDelete) this.DeletePicture();
+    }
+
+    // This reloads the list of pictures when then page loads from the localstorage.
+    async protected override void OnInitialized()
+    {
+        base.OnInitialized();
+
+        pictures = JsonSerializer.Deserialize<List<Picture>>(await JSRuntime.InvokeAsync<string>("localStorage.getItem", "pictureList")) ?? new();
+        StateHasChanged();
+    }
+
+    // This deletes the localstorage.
+    public async Task Delete()
+    {
+        await JSRuntime.InvokeAsync<string>("localStorage.removeItem", "pictureList");
+        StateHasChanged();
+    }
+}
